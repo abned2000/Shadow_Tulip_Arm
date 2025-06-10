@@ -141,6 +141,7 @@ void menu_principal() {
         std::cout << "2️⃣  📷 Testeo (Warning)\n";
         std::cout << "3️⃣  🔒 Bloquear motores\n";
         std::cout << "4️⃣  🔓 Desbloquear motores\n";
+        std::cout << "5️⃣  🔁 Movimiento continuo (loop con cámara)\n";
         std::cout << "📝 Seleccione una opción: ";
 
         std::cin >> opcion;
@@ -211,6 +212,69 @@ void menu_principal() {
             }
 
         }
+        else if (opcion == "5") {
+            std::cout << "\n[INFO] Movimiento continuo en bucle iniciado...\n";
+            std::cout << "⏱️  Ingrese tiempo de espera entre repeticiones (segundos): ";
+            int delay_s = 0;
+            std::cin >> delay_s;
+            std::cin.ignore(); // Limpiar el buffer
+
+            std::cout << "🔁 Presione 's' + Enter para detener después del siguiente ciclo completo.\n";
+
+            std::atomic<bool> detener(false);
+            std::thread input_thread([&detener]() {
+                std::string input;
+                while (std::getline(std::cin, input)) {
+                    if (input == "s" || input == "S") {
+                        detener = true;
+                        break;
+                    }
+                }
+            });
+
+            while (g_running && !detener) {
+                reproducirCSV("camera_start.csv", "c");
+
+                cv::VideoCapture cam(0);
+                if (!cam.isOpened()) {
+                    std::cerr << "[Error] No se pudo acceder a la cámara.\n";
+                } else {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    cv::Mat foto; cam >> foto;
+                    if (!foto.empty()) {
+                        auto now = std::chrono::system_clock::now();
+                        std::time_t tiempo_actual = std::chrono::system_clock::to_time_t(now);
+                        std::tm* tiempo_tm = std::localtime(&tiempo_actual);
+
+                        std::ostringstream nombre_archivo;
+                        nombre_archivo << "foto_loop_"
+                                    << std::put_time(tiempo_tm, "%Y%m%d_%H%M%S")
+                                    << ".jpg";
+
+                        cv::Mat foto_rotada;
+                        cv::rotate(foto, foto_rotada, cv::ROTATE_90_CLOCKWISE);
+                        cv::imwrite(nombre_archivo.str(), foto_rotada);
+                        std::cout << "✅ Imagen guardada como: " << nombre_archivo.str() << std::endl;
+                    }
+                    cam.release();
+                }
+
+                reproducirCSV("camera_home.csv", "c");
+
+                if (!detener) {
+                    std::this_thread::sleep_for(std::chrono::seconds(delay_s));
+                }
+            }
+
+            input_thread.detach();  // Ya terminó el bucle
+            std::cout << "⛔ Movimiento continuo detenido.\n";
+
+            for (auto& [joint, motor] : g_motors) {
+                motor.setControlParams(0, 0, 0, 0, 0);
+            }
+        }
+
+
         else {
             std::cout << "[Error] Opción no válida.\n";
         }
@@ -241,3 +305,4 @@ int main() {
     std::cout << "Sistema finalizado.\n";
     return 0;
 }
+
